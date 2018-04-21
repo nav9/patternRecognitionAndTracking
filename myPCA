@@ -1,0 +1,11 @@
+function [eigVec, score, eigVal] = myPCA(X)
+%X contains features in the rows X=36000x28
+D = X - repmat(mean(X,2),1,size(X,2));
+%C = D*D';
+%[eigVec eigVal] = eig(C);%out of memory error
+Z = D' / sqrt(size(X,2)-1);
+[score, S, eigVec] = svd(Z, 'econ');%score is representation of X in principal component space
+S = diag(S);
+eigVal = S.*S;%28x1 values already ordered from high to low
+%projec = 28x28
+%eigenVec = 36000x28
