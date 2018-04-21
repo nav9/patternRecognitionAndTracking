@@ -1,0 +1,125 @@
+clc;clear all;close all;
+
+spr=1;spc=2;spi=1;%subplot vars
+maleFol='E:\Module6_PatternRecognitionAndMachineLearning\assignment\dataset\partb\male\';
+femFol='E:\Module6_PatternRecognitionAndMachineLearning\assignment\dataset\partb\female\';
+dirInfoMale = dir(maleFol); dirInfoFem = dir(femFol);
+maleID = 1; femID = 0;
+useMaleFolders = 8; useFemFolders = 7; sysFoldersSkip = 2;
+maxMalePerFol = 0; maxFemPerFol = 0;%give zero or negative value to take all files
+loadTestImM = useMaleFolders - 0;%after these many folders, test images are loaded
+loadTestImF = useFemFolders - 0;%after these many folders, test images are loaded
+imSz = [];
+TRm = []; TRf = []; %Training data male and female
+TEm = []; TEf = []; %Test data male and female
+%---load images
+for i = sysFoldersSkip+1 : useMaleFolders+sysFoldersSkip%iterate folders
+    imSt = dir(strcat(maleFol,dirInfoMale(i).name,'\*.jpg'));    
+    for j=1:size(imSt,1)%load male images
+        I = double(rgb2gray(imread(strcat(maleFol,dirInfoMale(i).name,'\',imSt(j).name))));
+        if i>loadTestImM+sysFoldersSkip, TEm = [TEm I(:)];else TRm = [TRm I(:)];end; 
+        if i==sysFoldersSkip+1 && j==1, imSz = size(I);end%get image size
+        if maxMalePerFol == j, break;end%if you only want few images
+    end
+end
+for i = sysFoldersSkip+1 : useFemFolders+sysFoldersSkip%iterate folders
+    imSt = dir(strcat(femFol,dirInfoFem(i).name,'\*.jpg'));
+    for j=1:size(imSt,1)%load female images
+        I = double(rgb2gray(imread(strcat(femFol,dirInfoFem(i).name,'\',imSt(j).name))));
+        if i>loadTestImF+sysFoldersSkip, TEf = [TEf I(:)];else TRf = [TRf I(:)];end; 
+        if maxFemPerFol == j, break;end%if you only want few images
+    end
+end
+
+fprintf('TrainingM %d, %d\nTrainingF %d, %d\n',size(TRm,1),size(TRm,2),size(TRf,1),size(TRf,2));
+fprintf('TestM %d, %d\nTestF %d, %d\n',size(TEm,1),size(TEm,2),size(TEf,1),size(TEf,2));
+fprintf('TestM folders %d\nTestF folders %d\n', useMaleFolders-loadTestImM, useFemFolders-loadTestImF);
+tic;
+
+% %---HOG
+% HO = []; G =[];
+% %---train
+% for i=1:size(TRm,2), HO = [HO; HOG(reshape(TRm(:,i),imSz))];G=[G maleID];end
+% for i=1:size(TRf,2), HO = [HO; HOG(reshape(TRf(:,i),imSz))];G=[G femID];end
+% model = NaiveBayes.fit(HO, G');
+% %---test
+% HO = []; G = [];
+% for i=1:size(TEm,2), HO = [HO; HOG(reshape(TEm(:,i),imSz))];G=[G maleID];end
+% for i=1:size(TEf,2), HO = [HO; HOG(reshape(TEf(:,i),imSz))];G=[G femID];end
+% 
+% classified = model.predict(HO);
+% 
+% fprintf('Time %fs\n', toc);
+% confMat = confusionmat(G', classified);
+% disp('confusion matrix');disp(confMat);
+% accuracy = 100*sum(diag(confMat))/length(classified);
+% fprintf('Accuracy = %f%%\n', accuracy);
+
+%---Extract principal components for male
+G = [];%class group ID's
+Train_pca = [];
+colormap(gray);
+%[eigenVec, projec, eigenVal] = princomp(TRm','econ');
+[EigM, projec, eigenVal] = myPCA(TRm);
+%for i=1:size(EigM,2),subplot(spr,spc,spi);spi=spi+1;imagesc(reshape(EigM(:,i),imSz));title(num2str(i));end
+%subplot(spr,spc,spi);spi=spi+1;imagesc(reshape(mean(EigM,2),imSz));title('Male mean');
+
+%[eigenVec, projec, eigenVal] = princomp(TRf','econ');
+[EigF, projec, eigenVal] = myPCA(TRf);
+%for i=1:size(EigF,2),subplot(spr,spc,spi);spi=spi+1;imagesc(reshape(EigF(:,i),imSz));title(num2str(i));end
+%subplot(spr,spc,spi);spi=spi+1;imagesc(reshape(mean(EigF,2),imSz));title('Female mean');
+
+%numPrinComp = min(size(EigM,2), size(EigF,2));
+prinComps = [1:9];%1:numPrinComp;
+disp('Principal components:');disp(prinComps);
+
+dimRedM = TRm'*EigM(:,prinComps); 
+dimRedF = TRf'*EigF(:,prinComps);
+size(EigF(:,prinComps))
+
+EigVecs = [dimRedM; dimRedF]; 
+G = [maleID*ones(size(dimRedM,1), 1); femID*ones(size(dimRedF,1), 1)];
+
+model = NaiveBayes.fit(EigVecs, G);
+
+% %---test with TRAINING data
+% G=[];classified=[];
+% MProjTR = TRm' * EigM(:,prinComps);%project it onto the face space to reduce dimension
+% for i=1:size(MProjTR,1)
+%     r = model.predict(MProjTR(i,:)); 
+%     classified = [classified; r]; G = [G; maleID];
+%     %if r==maleID, fprintf('Male\n'); else fprintf('Female\n');end
+% end
+% 
+% fprintf('---------\n');
+% 
+% FProjTR = TRf' * EigF(:,prinComps);%project it onto the face space to reduce dimension
+% for i=1:size(FProjTR,1)
+%     r = model.predict(FProjTR(i,:)); 
+%     classified = [classified; r]; G = [G; femID];
+%     %if r==maleID, fprintf('Male\n'); else fprintf('Female\n');end    
+% end
+
+%---test with TESTING data
+G = []; classified = [];
+MProjTE = TEm' * EigM(:,prinComps);%project it onto the face space to reduce dimension
+for i=1:size(MProjTE,1)
+    r = model.predict(MProjTE(i,:));
+    classified = [classified; r]; G = [G; maleID];
+    %if r==maleID, fprintf('Male\n'); else fprintf('Female\n');end
+end
+
+fprintf('---------\n');
+
+FProjTE = TEf' * EigF(:,prinComps);%project it onto the face space to reduce dimension
+for i=1:size(FProjTE,1)
+    r = model.predict(FProjTE(i,:));
+    classified = [classified; r]; G = [G; femID];
+    %if r==maleID, fprintf('Male\n'); else fprintf('Female\n');end
+end
+
+fprintf('Total time taken: %f s\n', toc);
+confMat = confusionmat(G, classified);
+disp('Confusion matrix:');disp(confMat);
+accuracy = 100*sum(diag(confMat))/length(classified);
+fprintf('Accuracy = %f%%\n', accuracy);
