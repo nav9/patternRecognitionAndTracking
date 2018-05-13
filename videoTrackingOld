@@ -1,114 +1,157 @@
 clc;clear all;close all;
 
-classifier = 2;%1 for SVM, 2 for NaiveBayes
-spr=2;spc=5;spi=1;%subplot vars
+err = [];
+
+for cla = 1:2
+clf;
+classifier = cla;%1 for SVM, 2 for NaiveBayes   
+spr=4;spc=5;spi=1;%subplot vars
 iLoc='E:\Module6_PatternRecognitionAndMachineLearning\assignment\dataset\partc\imgs';
 fileExtent = csvread(strcat(iLoc,'\girl_frames.txt'));
 gt = csvread(strcat(iLoc,'\girl_gt.txt')); gtO = gt; gt = gt(1, :);
 maxFiles = fileExtent(2);%number of files are already stored in girl_gt.txt
-if maxFiles>9, maxFiles=9;end
+if maxFiles>20, maxFiles=20;end
 SStore = []; FF =[]; 
 RF =[];%reduced features of ground truth
 trainedModel = [];
-eW = 1; eH = eW;%offset by these many pixels
+eW = 2; eH = eW;%offset by these many pixels
 incr = 5;%patch increment
-scanArea = 40;%search for next ground truth in rectangle this wide on all sides
-gtR =[]; gtC=[]; gtW=[]; gtH=[]; calGT = []; err = [];
+numPrinCom=3;
+scanArea = 60;%search for next ground truth in rectangle this wide on all sides
+pc = 0.5;%what percentage of invasion permitted into ground truth boundary
+gtR =[]; gtC=[]; gtW=[]; gtH=[]; calGT = []; 
 isGT = 1; notGT = 0;
 figure(1);
 
-%---iterate all files
-for n = fileExtent(1):maxFiles
+%==========================================
+%---first frame
+%==========================================
+n = fileExtent(1);
+if n<10, imgNum=strcat('00',num2str(n)); else if n>9 && n<100, imgNum=strcat('0',num2str(n)); else imgNum=num2str(n);end;end
+filename = strcat(iLoc,'\img00',imgNum,'.png');
+II = double(rgb2gray(imread(filename)));
+gtR = gt(2); gtC = gt(1); gtW = gt(3); gtH = gt(4);%ground truth positions
+
+IC = double(imcrop(II, gt));%cropped image
+[iHt, iWd] = size(IC);    
+
+%---HOG
+GHH = HOG(IC);%HOG of ground truth. 81x1
+GHH1 = HOG(double(imcrop(II, [gtC-eW gtR gtW gtH])));
+GHH2 = HOG(double(imcrop(II, [gtC+eW gtR gtW gtH])));
+GHH3 = HOG(double(imcrop(II, [gtC gtR-eH gtW gtH])));
+GHH4 = HOG(double(imcrop(II, [gtC gtR+eH gtW gtH])));
+GH = [GHH(:) GHH1(:) GHH2(:) GHH3(:) GHH4(:)];%taking features of nearby patches too
+%---PCA
+[eigV, proj] = myPCA(GH);  
+RF = GH' * eigV(:, 1:numPrinCom); %reduced features 5x3
+imSz=size(IC);
+%         for i=1:size(eigV,2),figure,imagesc(reshape(eigV(:,i),imSz));title(num2str(i));end
+% figure, imagesc(reshape(mean(eigV,2),imSz));title('mean');colormap(gray);
+% figure, imshow(uint8(II));impixelinfo;
+
+FF = RF;
+G = isGT * ones(size(FF,1), 1);%group
+ITC = II;
+
+%---iterate the image and get patches
+for i = 1:incr:size(ITC,1)-iHt,%rows
+    for j = 1:incr:size(ITC,2)-iWd,%cols        
+        if i>=gtR-gtH*pc && i<=gtR+gtH*pc && j>=gtC-gtW*pc && j<=gtC+gtW*pc,
+            %avoid the patch of ground truth
+%             imshow(uint8(II));impixelinfo;rectangle('Position', [j i iWd iHt],'LineStyle','--');hold on;                        
+        else
+           %imshow(uint8(II));impixelinfo;rectangle('Position', [j i iWd iHt],'LineStyle','--');hold on;            
+            IM = ITC(i:i+iHt-1, j:j+iWd-1);%take a patch                
+            ho = HOG(IM);%get its HOG
+            BH = ho * eigV(:,1:numPrinCom);%project to reduce features
+            FF = [FF; BH]; G = [G; notGT];%store
+        end
+    end
+end
+if classifier == 1, trainedModel = svmtrain(FF, G);end
+if classifier == 2, trainedModel = NaiveBayes.fit(FF, G);end
+fprintf('\n');
+
+
+
+%==========================================
+%---remaining frames
+%==========================================
+for n = fileExtent(1)+1:maxFiles    
     if n<10, imgNum=strcat('00',num2str(n)); else if n>9 && n<100, imgNum=strcat('0',num2str(n)); else imgNum=num2str(n);end;end
     filename = strcat(iLoc,'\img00',imgNum,'.png');
     II = double(rgb2gray(imread(filename)));
     
-    if n ~= fileExtent(1)+1,%if not the second image
-        gtR = gt(2); gtC = gt(1); gtW = gt(3); gtH = gt(4);%ground truth positions
+    gtR = gt(2); gtC = gt(1); gtW = gt(3); gtH = gt(4);%ground truth positions
 
-        IC = double(imcrop(II, gt));%cropped image
-        [iHt, iWd] = size(IC);    
-        
-        %---HOG
-        GHH = HOG2(IC);%HOG of ground truth. 81x1
-        GHH1 = HOG2(double(imcrop(II, [gtC-eW gtR gtW gtH])));
-        GHH2 = HOG2(double(imcrop(II, [gtC+eW gtR gtW gtH])));
-        GHH3 = HOG2(double(imcrop(II, [gtC gtR-eH gtW gtH])));
-        GHH4 = HOG2(double(imcrop(II, [gtC gtR+eH gtW gtH])));
-        GH = [GHH; GHH1; GHH2; GHH3; GHH4];%taking features of nearby patches too
-        %---PCA        
-        [eigV, proj] = myPCA(GH');         
-        RF = GH * eigV; %reduced features
-    end
+    IC = double(imcrop(II, gt));%cropped image
+    [iHt, iWd] = size(IC);    
     
-    if n == fileExtent(1), %if first image       
-        FF = RF; G = isGT * ones(size(FF,1), 1);%group
-        ITC = II;
-    end
-    
-    if n > fileExtent(1), %if not first image
-        stR = gtR-scanArea; enR = gtR+gtH+scanArea;
-        stC = gtC-scanArea; enC = gtC+gtW+scanArea;
-        %border check
-        if stR<1, stR=1;end; if stC<1, stC=1;end
-        if enR>size(II,1), enR=size(II,1);end; if enC>size(II,2), enC=size(II,2);end; 
-        ITC = II(stR:enR, stC:enC);%image section within which to search for face
-        FF=[];G=[];
-    end
-%     figure(1);imshow(uint8(II));rectangle('Position', gt);hold on;
+    %---HOG
+    GHH = IC(:);%HOG(IC);%HOG of ground truth. 81x1
+    GHH1 = double(imcrop(II, [gtC-eW gtR gtW gtH]));%HOG(double(imcrop(II, [gtC-eW gtR gtW gtH])));
+    GHH2 = double(imcrop(II, [gtC+eW gtR gtW gtH]));%HOG(double(imcrop(II, [gtC+eW gtR gtW gtH])));
+    GHH3 = double(imcrop(II, [gtC gtR-eH gtW gtH]));%HOG(double(imcrop(II, [gtC gtR-eH gtW gtH])));
+    GHH4 = double(imcrop(II, [gtC gtR+eH gtW gtH]));%HOG(double(imcrop(II, [gtC gtR+eH gtW gtH])));
+    GH = [GHH(:) GHH1(:) GHH2(:) GHH3(:) GHH4(:)];%taking features of nearby patches too
+    %---PCA
+    [eigV, proj] = myPCA(GH);  
+    RF = GH' * eigV(:, 1:numPrinCom); %reduced features 5x3
+%    imSz=size(IC);
+%         for i=1:size(eigV,2),figure,imagesc(reshape(eigV(:,i),imSz));title(num2str(i));end
+%    figure,imagesc(reshape(mean(eigV,2),imSz));title('mean');colormap(gray);
+   
+    stR = gtR-scanArea; enR = gtR+gtH+scanArea;
+    stC = gtC-scanArea; enC = gtC+gtW+scanArea;
+    %border check
+    if stR<1, stR=1;end; if stC<1, stC=1;end
+    if enR>size(II,1), enR=size(II,1);end; if enC>size(II,2), enC=size(II,2);end; 
+    ITC = II(stR:enR, stC:enC);%image section within which to search for face
+    FF=[];G=[];
     
     gtFound = 0;
     %---iterate the image and get patches
     for i = 1:incr:size(ITC,1)-iHt,
         for j = 1:incr:size(ITC,2)-iWd,
-            if n == fileExtent(1) && (i>=gtR && i<=gtR+2*eH && j>=gtC && j<=gtC+2*eW) || (i>=gtR-2*eH && i<=gtR && j>=gtC && j<=gtC+2*eW),
-                %avoid the patch of ground truth
-            else
                 IM = ITC(i:i+iHt-1, j:j+iWd-1);%take a patch                
-                ho = HOG2(IM);%get its HOG
-                BH = ho * eigV;%project to reduce features
+                ho = IM(:);%HOG(IM);%get its HOG
+                BH = ho' * eigV(:,1:numPrinCom);%project to reduce features
                 
-                if n == fileExtent(1), %if first image
-                    FF = [FF; BH]; G = [G; notGT];%store
-                else
-                    if classifier == 1, classifResult = svmclassify(trainedModel, BH);end
-                    if classifier == 2, classifResult = trainedModel.predict(BH);end;
-                    if classifResult == isGT,
-                        simi = pdist2(RF(1,:), BH, 'cosine');
-                        FF = [FF; [i j simi]];
-                        gtFound = 1;
-                        rectangle('Position', [stC+j stR+i gtW gtH],'LineStyle','--');hold on;fprintf('.');
-                    end
+                if classifier == 1, classifResult = svmclassify(trainedModel, BH);end
+                if classifier == 2, classifResult = trainedModel.predict(BH);end
+                if classifResult == isGT,
+                    simi = pdist2(mean(RF), BH, 'cosine');
+                    FF = [FF; [i j simi]];
+                    gtFound = 1;
                 end
-
-            end
         end
     end
     fprintf('\n');
     
-    if n == fileExtent(1), %if first image
-        if classifier == 1, trainedModel = svmtrain(FF, G);end
-        if classifier == 2, trainedModel = NaiveBayes.fit(FF, G);end
+    if gtFound==0, fprintf('Ground truth could not be found at iteration %d\n',n);break;
     else
-        if gtFound==0, fprintf('Ground truth could not be found at iteration %d\n',n);break;
-        else
-            [v, ind] = min(FF(:, 3));
-            newGtR = FF(ind, 1) + stR;
-            newGtC = FF(ind, 2) + stC;
-            gt(1) = newGtC; 
-            gt(2) = newGtR;
-            err(n) = sqrt((gt(1)-gtO(n,1)).^2+(gt(2)-gtO(n,2)).^2); %#ok<*SAGROW>
-        end
-    end  
+        [v, ind] = min(FF(:, 3));
+        newGtR = FF(ind, 1) + stR; newGtC = FF(ind, 2) + stC;
+        gt(1) = newGtC; gt(2) = newGtR;
+        err(cla,n) = sqrt((gt(1)-gtO(n+1,1)).^2+(gt(2)-gtO(n+1,2)).^2); %#ok<*SAGROW>
+    end
     
     %---display
     subplot(spr,spc,spi);spi=spi+1;imshow(uint8(II));title(strcat('Frame',num2str(n+1)));
-    rectangle('Position', gt, 'LineWidth',2);hold on;%ground truth
+    rectangle('Position', gt, 'LineWidth',2);hold on;%estimated ground truth
+    rectangle('Position', gtO(n+1,:), 'LineWidth',1);hold on;%given ground truth
     if n ~= fileExtent(1),rectangle('Position', [stC stR enC-stC enR-stR],'LineStyle',':');hold on;end
     fprintf('frame %d\n',n);
-    %pause();
+    %pause(0.1);
 end
+end%cla
 disp('errors');disp(err);
+figure(2); 
+plot(1:maxFiles, err(1,:), 'or');hold on;
+if size(err,1)>1, plot(1:maxFiles, err(2,:), '.b');end; hold on;
+legend('SVM error', 'NaiveBayes error');title('Error');xlabel('frame#');ylabel('RMS error');
+
 
 
 
