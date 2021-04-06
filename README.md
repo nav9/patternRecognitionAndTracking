@@ -1,4 +1,4 @@
-# patternRecognitionAndTracking
+# Face Pattern Recognition and Tracking
 A program that uses Principal Component Analysis (PCA) and Histograms of Oriented Gradients (HOG) to recognize faces and be able to track them in a video
 
 HOG and HOG2 have been implemented by Sanyam and Ludwig. The necessary attribution and license is mentioned within the respective files. 
